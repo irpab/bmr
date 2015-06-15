@@ -1,0 +1,101 @@
+bmr (bad record match) parse transform for match expressions with records in left side like
+#record{ field_1 = value_1 } = something_that_return_record() that will wrap
+this match_expr with special code that will work in case of badmatch exception
+and will indicate which exact fields were not matched.
+
+
+Initial code (from bmr_example.erl):
+return_record() ->
+  #rec{
+    a = 1,
+    b = 2,
+    c = #rec2{
+      x = 11,
+      y = #rec3{
+        s = 111,
+        t = {112, a},
+        q = b,
+        w = a
+      },
+      z = 12
+    },
+    d = 3,
+    e = a,
+    f = b,
+    g = a,
+    k = k1,
+    l = l1
+  }.
+
+Vb = bbb,
+Vq = b,
+#rec{
+  a = 11, % wrong value
+  b = Vb, % wrong value with variable
+  c = #rec2{
+    x = X,
+    y = R3 = #rec3{ % nested records could be putted into var
+      % s = 111,
+      t = {112, b}, % wrong value inside nested records
+      q = Vq,
+      w = Vdfw % detect same new variable wrong values (inside nested records)
+    },
+    z = 12
+  },
+  d = Vdfw, % detect same new variable wrong values
+  e = Veg, % working with new variables 1+
+  f = Vdfw, % detect same new variable wrong values
+  g = Veg, % working with new variables 1+
+  k = Vkl,
+  l = Vkl
+} = return_record()
+
+running this code without bmr_pr parse transform:
+{badmatch, {rec,1,2,{rec2,11,{rec3,111,{112,a},b,a},12},3,a,b,a,k1,l1}}
+not very informative..
+
+but running this code with bmr_pr parse transform:
+>>>>>>>>>> bmr called ({"bmr_example.erl",179}) <<<<<<<<<<
+In record 'rec' following fields should have the same value:
+ for var 'Vdfw':
+   "field 'f'": b
+   "field 'd'": 3
+   "field 'c' (record type 'rec2') field 'y' (record type 'rec3') field 'w'": a
+
+ for var 'Vkl':
+   "field 'l'": l1
+   "field 'k'": k1
+
+In record 'rec' following fields does not match on left and right:
+  "field 'a'": left = 11 vs right = 1
+  "field 'b'": left = bbb vs right = 2
+  "field 'c' (record type 'rec2') field 'y' (record type 'rec3') field 't'": left = {112, b} vs right = {112, a}
+<<<<<<<<<<  bmr done  >>>>>>>>>>
+
+
+example of initial code and result of parse_transform:
+A = 5,
+#record{
+  a = A,
+  b = B,
+  c = C,
+  d = 7
+} = return_record_fun()
+--->
+begin
+  {R, [B, C]} = try
+    _tmp_R = return_record_fun(),
+    #record{
+      a = A,
+      b = _tmp_B,
+      c = _tmp_C,
+      d = 7
+    } = _tmp_R,
+    {_tmp_R, [_tmp_B, _tmp_C]}
+  catch
+    error:{badmatch, _tmp_R} ->
+      bmr:bmr(...), all needed information about record
+      erlang:error({badmatch, _tmp_R})
+  end,
+  R
+end
